@@ -2,7 +2,6 @@ package cl.duocuc.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -18,31 +17,36 @@ import cl.duocuc.model.ProbadorUiState
 @Composable
 fun TarjetaProbador(
     probador: ProbadorUiState,
-    onCambiarEstado: (EstadoProbador) -> Unit,
+    ahora: Long,
+    onIniciarUso: () -> Unit,
+    onTerminarUso: () -> Unit,
+    onFinalizarOrdenamiento: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val segundos = ((ahora - probador.estadoDesde).coerceAtLeast(0) / 1_000)
+
     Card(modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(probador.codigo, style = MaterialTheme.typography.titleMedium)
-                Text(probador.estado.etiqueta)
-            }
+            Text(probador.codigo, style = MaterialTheme.typography.titleMedium)
+            Text(probador.ubicacion)
+            Text(if (probador.accesible) "Probador accesible" else "Probador estándar")
+            Text("Estado: ${probador.estado.etiqueta}")
+            Text("Tiempo en este estado: ${segundos / 60} min ${segundos % 60} s")
 
-            Text(probador.ubicacion, style = MaterialTheme.typography.bodyMedium)
-
-            if (probador.estado == EstadoProbador.OCUPADO) {
-                Text("Tiempo de uso: ${probador.minutosUso} minutos")
-            }
-
-            Button(onClick = {
-                val siguienteEstado = if (probador.estado == EstadoProbador.LIBRE) {
-                    EstadoProbador.OCUPADO
-                } else {
-                    EstadoProbador.LIBRE
+            when (probador.estado) {
+                EstadoProbador.LIBRE -> {
+                    Button(onClick = onIniciarUso) { Text("Iniciar uso") }
                 }
-                onCambiarEstado(siguienteEstado)
-            }) {
-                Text(if (probador.estado == EstadoProbador.LIBRE) "Marcar ocupado" else "Liberar")
+                EstadoProbador.OCUPADO -> {
+                    Button(onClick = onTerminarUso) { Text("Terminar uso") }
+                }
+                EstadoProbador.ORDENAMIENTO -> {
+                    Text("El probador estará disponible cuando termine el ordenamiento")
+                    Button(onClick = onFinalizarOrdenamiento) { Text("Finalizar ordenamiento") }
+                }
+                EstadoProbador.FUERA_SERVICIO -> {
+                    Text("No disponible para asignación")
+                }
             }
         }
     }
