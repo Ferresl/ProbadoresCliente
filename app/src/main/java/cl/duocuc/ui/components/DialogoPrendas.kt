@@ -24,6 +24,7 @@ fun DialogoPrendas(
     codigo: String,
     iniciando: Boolean,
     prendasIngresadas: Int?,
+    numeroTurno: Int?,
     onConfirmar: (Int) -> String?,
     onCerrar: () -> Unit
 ) {
@@ -38,6 +39,9 @@ fun DialogoPrendas(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (iniciando && numeroTurno != null) {
+                    Text("Atender turno T-${numeroTurno.toString().padStart(3, '0')}")
+                }
                 Text(
                     if (iniciando) "Ingresa entre 1 y 6 prendas"
                     else "Prendas ingresadas: ${prendasIngresadas ?: "Sin registro"}"

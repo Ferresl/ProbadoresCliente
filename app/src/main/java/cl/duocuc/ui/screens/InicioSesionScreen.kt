@@ -12,6 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -27,12 +28,18 @@ fun InicioSesionScreen(
     estado: SesionUiState,
     onCorreoCambia: (String) -> Unit,
     onContrasenaCambia: (String) -> Unit,
-    onIngresar: () -> Unit
+    onIngresar: () -> Unit,
+    onVolver: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+        TextButton(onClick = onVolver) {
+            Icon(painterResource(R.drawable.ic_volver), contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Volver al inicio")
+        }
         Text("Rincón Sur", style = MaterialTheme.typography.headlineMedium)
         Text("Ingreso del personal", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.duocuc.model.EstadoProbador
+import cl.duocuc.model.EstadoTurno
 import cl.duocuc.R
 import cl.duocuc.model.RolUsuario
 import cl.duocuc.ui.components.DialogoPrendas
@@ -42,7 +43,8 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 fun PantallaEstadoProbadores(
     viewModel: ProbadoresViewModel = viewModel(),
-    onVerUsuarios: () -> Unit = {}
+    onVerUsuarios: () -> Unit = {},
+    onCerrarSesion: () -> Unit = {}
 ) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
     val sesion by viewModel.sesion.collectAsStateWithLifecycle()
@@ -67,7 +69,7 @@ fun PantallaEstadoProbadores(
                         Text("Usuarios")
                     }
                 }
-                TextButton(onClick = viewModel::cerrarSesion) {
+                TextButton(onClick = onCerrarSesion) {
                     Icon(painterResource(R.drawable.ic_salir), contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Salir")
@@ -89,6 +91,21 @@ fun PantallaEstadoProbadores(
                         Text("En ordenamiento: ${estado.probadores.count { it.estado == EstadoProbador.ORDENAMIENTO }}")
                         Text("Fuera de servicio: ${estado.probadores.count { it.estado == EstadoProbador.FUERA_SERVICIO }}")
                         Text("Usos terminados: ${usosCerrados.size}")
+                    }
+                }
+            }
+            item {
+                val pendientes = estado.turnos.filter { it.estado == EstadoTurno.ESPERANDO }
+                    .sortedWith(compareBy({ !it.condicion.preferente }, { it.numero }))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Fila de espera: ${pendientes.size}", style = MaterialTheme.typography.titleMedium)
+                        pendientes.forEach { turno ->
+                            Text("T-${turno.numero.toString().padStart(3, '0')} · ${turno.condicion.etiqueta}")
+                        }
+                        if (pendientes.isNotEmpty()) {
+                            Text("El siguiente turno se asigna al iniciar un uso.")
+                        }
                     }
                 }
             }
@@ -146,6 +163,7 @@ fun PantallaEstadoProbadores(
             codigo = codigo,
             iniciando = iniciando,
             prendasIngresadas = usoActivo?.prendasIngresadas,
+            numeroTurno = if (iniciando) viewModel.siguienteTurno(codigo)?.numero else null,
             onConfirmar = { cantidad ->
                 if (iniciando) viewModel.iniciarUso(codigo, cantidad)
                 else viewModel.terminarUso(codigo, cantidad)

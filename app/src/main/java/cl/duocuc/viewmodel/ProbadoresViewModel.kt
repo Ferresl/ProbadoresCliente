@@ -2,9 +2,13 @@ package cl.duocuc.viewmodel
 
 import android.app.Application
 import android.util.Patterns
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duocuc.model.EstadoProbador
+import cl.duocuc.model.EstadoTurno
+import cl.duocuc.model.CondicionCliente
 import cl.duocuc.model.EstadoProbadoresUiState
 import cl.duocuc.data.UsuarioDbHelper
 import cl.duocuc.model.FormularioUsuarioUiState
@@ -12,6 +16,7 @@ import cl.duocuc.model.ProbadorUiState
 import cl.duocuc.model.RolUsuario
 import cl.duocuc.model.SesionUiState
 import cl.duocuc.model.UsoProbador
+import cl.duocuc.model.TurnoEsperaUiState
 import cl.duocuc.model.Usuario
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,14 +29,45 @@ import kotlinx.coroutines.launch
 class ProbadoresViewModel(application: Application) : AndroidViewModel(application) {
 
     private val usuarioDb = UsuarioDbHelper(application)
+    private val turnosPrefs = application.getSharedPreferences("numeros_turno", 0)
     private val _usuarios = MutableStateFlow(usuarioDb.listar())
     val usuarios: StateFlow<List<Usuario>> = _usuarios.asStateFlow()
     private val _formulario = MutableStateFlow(FormularioUsuarioUiState())
     val formulario: StateFlow<FormularioUsuarioUiState> = _formulario.asStateFlow()
     private var correoActual: String? = null
 
+    private fun cargarTurnos(): List<TurnoEsperaUiState> {
+        return try {
+            val datos = JSONArray(turnosPrefs.getString("fila", "[]"))
+            (0 until datos.length()).map { indice ->
+                val dato = datos.getJSONObject(indice)
+                TurnoEsperaUiState(
+                    numero = dato.getInt("numero"),
+                    condicion = CondicionCliente.valueOf(dato.getString("condicion")),
+                    horaIngreso = dato.getLong("hora"),
+                    estado = EstadoTurno.ESPERANDO
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun guardarTurnos(turnos: List<TurnoEsperaUiState>) {
+        val datos = JSONArray()
+        turnos.filter { it.estado == EstadoTurno.ESPERANDO }.forEach { turno ->
+            datos.put(JSONObject().apply {
+                put("numero", turno.numero)
+                put("condicion", turno.condicion.name)
+                put("hora", turno.horaIngreso)
+            })
+        }
+        turnosPrefs.edit().putString("fila", datos.toString()).apply()
+    }
+
     private val _uiState = MutableStateFlow(
         EstadoProbadoresUiState(
+            turnos = cargarTurnos(),
             probadores = (1..8).map { numero ->
                 ProbadorUiState(
                     codigo = "P-${numero.toString().padStart(2, '0')}",
@@ -50,6 +86,51 @@ class ProbadoresViewModel(application: Application) : AndroidViewModel(applicati
     private val _sesion = MutableStateFlow(SesionUiState())
     val sesion: StateFlow<SesionUiState> = _sesion.asStateFlow()
     private var siguienteIdUso = 1L
+    private var siguienteNumeroTurno = turnosPrefs.getInt("siguiente", 1)
+
+    fun sacarTurno(condicion: CondicionCliente): TurnoEsperaUiState {
+        val actual = _uiState.value
+        val enEspera = actual.turnos.filter { it.estado == EstadoTurno.ESPERANDO }
+        val personasAntes = if (condicion.preferente) {
+            enEspera.count { it.condicion.preferente }
+        } else enEspera.size
+        val habilitados = actual.probadores.count { it.estado != EstadoProbador.FUERA_SERVICIO }
+            .coerceAtLeast(1)
+        val minutos = ((personasAntes + 1) * (tiempoPromedioUso() + 1) + habilitados - 1) / habilitados
+        val numero = siguienteNumeroTurno++
+        turnosPrefs.edit().putInt("siguiente", siguienteNumeroTurno).apply()
+        val turno = TurnoEsperaUiState(
+            numero = numero,
+            condicion = condicion,
+            solicitaAccesible = condicion.preferente,
+            personasAntes = personasAntes,
+            minutosEstimados = minutos
+        )
+        _uiState.update { it.copy(turnos = it.turnos + turno) }
+        guardarTurnos(_uiState.value.turnos)
+        return turno
+    }
+
+    fun tiempoPromedioUso(): Int {
+        val terminados = _uiState.value.usos.filter { it.horaTermino != null }
+        if (terminados.size < 10) return 8
+        return (terminados.map { ((it.horaTermino!! - it.horaInicio) / 60_000).toInt() }
+            .average()).toInt().coerceAtLeast(1)
+    }
+
+    fun siguienteTurno(codigo: String): TurnoEsperaUiState? {
+        val pendientes = _uiState.value.turnos.filter { it.estado == EstadoTurno.ESPERANDO }
+        val preferentes = pendientes.filter { it.condicion.preferente }.minByOrNull { it.numero }
+        val normales = pendientes.filter { !it.condicion.preferente }.minByOrNull { it.numero }
+        val accesibleLibre = _uiState.value.probadores.any {
+            it.accesible && it.estado == EstadoProbador.LIBRE
+        }
+        return if (codigo == "P-08" || !accesibleLibre) {
+            preferentes ?: normales
+        } else {
+            normales ?: preferentes
+        }
+    }
 
     fun cambiarCorreo(valor: String) {
         _sesion.update { it.copy(correo = valor, error = null) }
@@ -175,11 +256,13 @@ class ProbadoresViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         val ahora = System.currentTimeMillis()
+        val turno = siguienteTurno(codigo)
         val uso = UsoProbador(
             id = siguienteIdUso,
             codigoProbador = codigo,
             horaInicio = ahora,
-            prendasIngresadas = prendas
+            prendasIngresadas = prendas,
+            numeroTurno = turno?.numero
         )
 
         _uiState.value = actual.copy(
@@ -189,8 +272,12 @@ class ProbadoresViewModel(application: Application) : AndroidViewModel(applicati
                 } else it
             },
             usos = actual.usos + uso,
+            turnos = actual.turnos.map {
+                if (it.numero == turno?.numero) it.copy(estado = EstadoTurno.EN_USO) else it
+            },
             ahora = ahora
         )
+        guardarTurnos(_uiState.value.turnos)
         siguienteIdUso++
         return null
     }
@@ -223,6 +310,9 @@ class ProbadoresViewModel(application: Application) : AndroidViewModel(applicati
                 if (it.id == uso.id) {
                     it.copy(horaTermino = ahora, prendasDevueltas = prendasDevueltas)
                 } else it
+            },
+            turnos = actual.turnos.map {
+                if (it.numero == uso.numeroTurno) it.copy(estado = EstadoTurno.FINALIZADO) else it
             },
             ahora = ahora
         )

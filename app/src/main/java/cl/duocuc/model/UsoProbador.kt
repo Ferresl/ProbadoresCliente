@@ -5,6 +5,7 @@ data class UsoProbador(
     val codigoProbador: String,
     val horaInicio: Long,
     val prendasIngresadas: Int,
+    val numeroTurno: Int? = null,
     val horaTermino: Long? = null,
     val prendasDevueltas: Int? = null
 )
