@@ -1,11 +1,18 @@
 package cl.duocuc.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.util.Patterns
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duocuc.model.EstadoProbador
 import cl.duocuc.model.EstadoProbadoresUiState
+import cl.duocuc.data.UsuarioDbHelper
+import cl.duocuc.model.FormularioUsuarioUiState
 import cl.duocuc.model.ProbadorUiState
+import cl.duocuc.model.RolUsuario
+import cl.duocuc.model.SesionUiState
 import cl.duocuc.model.UsoProbador
+import cl.duocuc.model.Usuario
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +21,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class ProbadoresViewModel : ViewModel() {
+class ProbadoresViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val usuarioDb = UsuarioDbHelper(application)
+    private val _usuarios = MutableStateFlow(usuarioDb.listar())
+    val usuarios: StateFlow<List<Usuario>> = _usuarios.asStateFlow()
+    private val _formulario = MutableStateFlow(FormularioUsuarioUiState())
+    val formulario: StateFlow<FormularioUsuarioUiState> = _formulario.asStateFlow()
+    private var correoActual: String? = null
 
     private val _uiState = MutableStateFlow(
         EstadoProbadoresUiState(
@@ -33,7 +47,111 @@ class ProbadoresViewModel : ViewModel() {
     )
 
     val uiState: StateFlow<EstadoProbadoresUiState> = _uiState.asStateFlow()
+    private val _sesion = MutableStateFlow(SesionUiState())
+    val sesion: StateFlow<SesionUiState> = _sesion.asStateFlow()
     private var siguienteIdUso = 1L
+
+    fun cambiarCorreo(valor: String) {
+        _sesion.update { it.copy(correo = valor, error = null) }
+    }
+
+    fun cambiarContrasena(valor: String) {
+        _sesion.update { it.copy(contrasena = valor, error = null) }
+    }
+
+    fun iniciarSesion() {
+        val actual = _sesion.value
+        val correo = actual.correo.trim().lowercase()
+        val usuario = usuarioDb.iniciarSesion(correo, actual.contrasena)
+        correoActual = usuario?.correo
+        _sesion.update {
+            if (usuario != null) {
+                it.copy(correo = usuario.correo, rol = usuario.rol, contrasena = "", error = null)
+            } else {
+                it.copy(contrasena = "", error = "Correo o contraseña incorrectos")
+            }
+        }
+    }
+
+    fun cerrarSesion() {
+        correoActual = null
+        _sesion.value = SesionUiState()
+    }
+
+    fun cambiarNombreUsuario(valor: String) {
+        _formulario.update { it.copy(nombreCompleto = valor, error = null) }
+    }
+
+    fun cambiarCorreoUsuario(valor: String) {
+        _formulario.update { it.copy(correo = valor, error = null) }
+    }
+
+    fun cambiarContrasenaUsuario(valor: String) {
+        _formulario.update { it.copy(contrasena = valor, error = null) }
+    }
+
+    fun cambiarRolUsuario(valor: RolUsuario) {
+        _formulario.update { it.copy(rol = valor, error = null) }
+    }
+
+    fun registrarUsuario(): Boolean {
+        if (_sesion.value.rol != RolUsuario.ADMIN) {
+            _formulario.update { it.copy(error = "Solo el administrador puede registrar usuarios") }
+            return false
+        }
+        val datos = _formulario.value
+        val correo = datos.correo.trim().lowercase()
+        val error = when {
+            datos.nombreCompleto.isBlank() -> "Ingresa el nombre completo"
+            !Patterns.EMAIL_ADDRESS.matcher(correo).matches() -> "Ingresa un correo válido"
+            datos.contrasena.length < 6 -> "La contraseña debe tener al menos 6 caracteres"
+            else -> null
+        }
+        if (error != null) {
+            _formulario.update { it.copy(error = error) }
+            return false
+        }
+        val usuario = Usuario(datos.nombreCompleto.trim(), correo, datos.rol)
+        if (!usuarioDb.registrar(usuario, datos.contrasena)) {
+            _formulario.update { it.copy(error = "Ese correo ya está registrado") }
+            return false
+        }
+        _usuarios.value = usuarioDb.listar()
+        _formulario.value = FormularioUsuarioUiState()
+        return true
+    }
+
+    fun eliminarUsuario(correo: String): String? {
+        if (_sesion.value.rol != RolUsuario.ADMIN) return "Solo el administrador puede eliminar usuarios"
+        if (correo == correoActual) return "No puedes eliminar tu propia cuenta"
+        if (!usuarioDb.eliminar(correo)) return "No se encontró el usuario"
+        _usuarios.value = usuarioDb.listar()
+        return null
+    }
+
+    private fun requiereSesion(): String? =
+        if (_sesion.value.rol == null) "Debes iniciar sesión" else null
+
+    fun cambiarMantenimiento(codigo: String): String? {
+        if (_sesion.value.rol != RolUsuario.ADMIN) return "Solo el administrador puede cambiar mantenimiento"
+        val actual = _uiState.value
+        val probador = actual.probadores.find { it.codigo == codigo }
+            ?: return "El probador no existe"
+        if (probador.estado == EstadoProbador.OCUPADO) return "Primero debe terminar el uso"
+        val nuevoEstado = if (probador.estado == EstadoProbador.FUERA_SERVICIO) {
+            EstadoProbador.LIBRE
+        } else {
+            EstadoProbador.FUERA_SERVICIO
+        }
+        val ahora = System.currentTimeMillis()
+        _uiState.value = actual.copy(
+            probadores = actual.probadores.map {
+                if (it.codigo == codigo) it.copy(estado = nuevoEstado, estadoDesde = ahora) else it
+            },
+            ahora = ahora
+        )
+        return null
+    }
 
     init {
         viewModelScope.launch {
@@ -45,6 +163,7 @@ class ProbadoresViewModel : ViewModel() {
     }
 
     fun iniciarUso(codigo: String, prendas: Int): String? {
+        requiereSesion()?.let { return it }
         val actual = _uiState.value
         val probador = actual.probadores.find { it.codigo == codigo }
             ?: return "El probador no existe"
@@ -77,6 +196,7 @@ class ProbadoresViewModel : ViewModel() {
     }
 
     fun terminarUso(codigo: String, prendasDevueltas: Int): String? {
+        requiereSesion()?.let { return it }
         val actual = _uiState.value
         val probador = actual.probadores.find { it.codigo == codigo }
             ?: return "El probador no existe"
@@ -110,6 +230,7 @@ class ProbadoresViewModel : ViewModel() {
     }
 
     fun finalizarOrdenamiento(codigo: String): String? {
+        requiereSesion()?.let { return it }
         val actual = _uiState.value
         val probador = actual.probadores.find { it.codigo == codigo }
             ?: return "El probador no existe"

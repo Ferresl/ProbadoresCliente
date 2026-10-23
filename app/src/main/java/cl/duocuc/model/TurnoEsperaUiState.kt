@@ -1,6 +1,5 @@
 package cl.duocuc.model
 
-//estados posibles de una persona dentro de la fila
 enum class EstadoTurno(val etiqueta: String){
     ESPERANDO("Esperando"),
     ASIGNADO("Probador asignado"),
@@ -9,7 +8,6 @@ enum class EstadoTurno(val etiqueta: String){
     ABANDONO("Abandono")
 }
 
-//informacion basica del turno de espera
 data class TurnoEsperaUiState(
     val numero: Int = 0,
     val cantidadPrendas: Int = 0,

@@ -5,10 +5,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -20,10 +24,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.duocuc.model.EstadoProbador
+import cl.duocuc.R
+import cl.duocuc.model.RolUsuario
 import cl.duocuc.ui.components.DialogoPrendas
 import cl.duocuc.ui.components.TarjetaProbador
 import cl.duocuc.viewmodel.ProbadoresViewModel
@@ -33,8 +40,12 @@ import java.util.Locale
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PantallaEstadoProbadores(viewModel: ProbadoresViewModel = viewModel()) {
+fun PantallaEstadoProbadores(
+    viewModel: ProbadoresViewModel = viewModel(),
+    onVerUsuarios: () -> Unit = {}
+) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
+    val sesion by viewModel.sesion.collectAsStateWithLifecycle()
     var codigoSeleccionado by rememberSaveable { mutableStateOf<String?>(null) }
     var iniciando by rememberSaveable { mutableStateOf(true) }
     var mensajeError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -46,7 +57,20 @@ fun PantallaEstadoProbadores(viewModel: ProbadoresViewModel = viewModel()) {
             TopAppBar(title = {
                 Column {
                     Text("Rincón Sur")
-                    Text("RS-014 · Gestión de probadores", style = MaterialTheme.typography.labelMedium)
+                    Text("RS-014 · ${sesion.rol?.nombre ?: ""}", style = MaterialTheme.typography.labelMedium)
+                }
+            }, actions = {
+                if (sesion.rol == RolUsuario.ADMIN) {
+                    TextButton(onClick = onVerUsuarios) {
+                        Icon(painterResource(R.drawable.ic_usuarios), contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Usuarios")
+                    }
+                }
+                TextButton(onClick = viewModel::cerrarSesion) {
+                    Icon(painterResource(R.drawable.ic_salir), contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Salir")
                 }
             })
         }
@@ -87,6 +111,10 @@ fun PantallaEstadoProbadores(viewModel: ProbadoresViewModel = viewModel()) {
                     },
                     onFinalizarOrdenamiento = {
                         mensajeError = viewModel.finalizarOrdenamiento(probador.codigo)
+                    },
+                    puedeMantenimiento = sesion.rol == RolUsuario.ADMIN,
+                    onCambiarMantenimiento = {
+                        mensajeError = viewModel.cambiarMantenimiento(probador.codigo)
                     }
                 )
             }

@@ -3,15 +3,20 @@ package cl.duocuc.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import cl.duocuc.model.EstadoProbador
+import cl.duocuc.R
 import cl.duocuc.model.ProbadorUiState
 
 @Composable
@@ -21,6 +26,8 @@ fun TarjetaProbador(
     onIniciarUso: () -> Unit,
     onTerminarUso: () -> Unit,
     onFinalizarOrdenamiento: () -> Unit,
+    puedeMantenimiento: Boolean,
+    onCambiarMantenimiento: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val segundos = ((ahora - probador.estadoDesde).coerceAtLeast(0) / 1_000)
@@ -46,6 +53,14 @@ fun TarjetaProbador(
                 }
                 EstadoProbador.FUERA_SERVICIO -> {
                     Text("No disponible para asignación")
+                }
+            }
+            if (puedeMantenimiento && probador.estado != EstadoProbador.OCUPADO) {
+                Button(onClick = onCambiarMantenimiento) {
+                    Icon(painterResource(R.drawable.ic_mantenimiento), contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (probador.estado == EstadoProbador.FUERA_SERVICIO) "Volver a servicio"
+                    else "Poner en mantenimiento")
                 }
             }
         }
